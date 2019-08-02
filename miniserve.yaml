@@ -24,6 +24,8 @@ spec:
   selector:
     matchLabels:
       app: miniserve
+  strategy:
+    type: Recreate
   template:
     metadata:
       labels:
@@ -42,6 +44,17 @@ spec:
             - /data
           ports:
             - containerPort: 80
+          volumeMounts:
+            - mountPath: /data
+              name: miniserve-data
+        - name: miniserve-shell
+          image: alpine:latest
+          imagePullPolicy: Always
+          command:
+            - /bin/ash
+          args:
+            - -c
+            - while true; do sleep 1000; done
           volumeMounts:
             - mountPath: /data
               name: miniserve-data
