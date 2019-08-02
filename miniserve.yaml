@@ -1,0 +1,112 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: miniserve-data-pvc
+  namespace: fin-static
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: storage-ceph-ssd
+  volumeMode: Filesystem
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: miniserve
+  namespace: fin-static
+  labels:
+    app: miniserve
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: miniserve
+  template:
+    metadata:
+      labels:
+        app: miniserve
+    spec:
+      containers:
+        - name: miniserve
+          image: svenstaro/miniserve:latest
+          imagePullPolicy: Always
+          args:
+            - --no-symlinks
+            - --color-scheme
+            - Archlinux
+            - --port
+            - "80"
+            - /data
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - mountPath: /data
+              name: miniserve-data
+      volumes:
+        - name: miniserve-data
+          persistentVolumeClaim:
+            claimName: miniserve-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: miniserve-service
+  namespace: fin-static
+spec:
+  selector:
+    app: miniserve
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    certmanager.k8s.io/acme-challenge-type: http01
+    certmanager.k8s.io/acme-http01-edit-in-place: "true"
+    certmanager.k8s.io/issuer: miniserve-issuer
+    ingress.kubernetes.io/ssl-redirect: "true"
+    kubernetes.io/ingress.class: nginx
+    kubernetes.io/tls-acme: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: 512m
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "15"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+  name: miniserve-ingress
+  namespace: fin-static
+spec:
+  rules:
+    - host: static.deinstapel.de
+      http:
+        paths:
+          - backend:
+              serviceName: miniserve-service
+              servicePort: 80
+            path: /
+  tls:
+    - hosts:
+        - static.deinstapel.de
+      secretName: miniserve-secret
+---
+apiVersion: certmanager.k8s.io/v1alpha1
+kind: Issuer
+metadata:
+  name: miniserve-issuer
+  namespace: fin-static
+spec:
+  acme:
+    email: christensen.fin@gmail.com
+    privateKeySecretRef:
+      name: s3-le-prod
+    server: https://acme-v02.api.letsencrypt.org/directory
+    solvers:
+    - http01:
+        ingress:
+          class: nginx
+      selector: {}
